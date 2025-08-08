@@ -2,6 +2,20 @@
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
 
+## Syncing changes with Docker in real-time
+
+Use a bind mount to map the host’s src and public folders to the container’s /app/src and /app/public directories. This overrides the copied files in the container with the host’s versions, syncing changes in real-time.
+
+### Example Docker Run Command
+
+```bash
+docker build -f Dockerfile.dev -t hunlecb/frontend:latest .
+docker run -p 3000:3000 -v $(pwd)/src:/app/src -v $(pwd)/public:/app/public -d hunlecb/frontend:latest
+
+
+docker run -p 3000:3000 -v $(pwd)/src:/app/src:cached -v $(pwd)/public:/app/public:cached -e CHOKIDAR_USEPOLLING=true -e CHOKIDAR_INTERVAL=300 -e CHOKIDAR_POLLING_INTERVAL=300 -e HOST=0.0.0.0 -d hunlecb/frontend:latest
+```
+
 ## Available Scripts
 
 In the project directory, you can run:

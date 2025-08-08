@@ -1,0 +1,19 @@
+services:
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: hunlecb/frontend
+    ports:
+      - '3000:3000'
+    volumes:
+      - ./src:/app/src
+      - ./public:/app/public
+    environment:
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_HOST=127.0.0.1
+      - WDS_SOCKET_PORT=3000
+    container_name: ui
+  # redis:
+  #   image: redis:alpine
+  #   container_name: redis

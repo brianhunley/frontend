@@ -1,0 +1,26 @@
+# Node.js dependencies
+node_modules/
+npm-debug.log
+
+# Version control
+.git/
+.gitignore
+
+# Environment and configuration
+.env
+
+# Docker-related files
+Dockerfile
+Dockerfile.dev
+Dockerfile.prod
+docker-compose.yml
+.dockerignore
+
+# Build and distribution outputs
+build/
+dist/
+coverage/
+
+# Documentation and miscellaneous
+*.md
+tests/
