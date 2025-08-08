@@ -13,7 +13,16 @@ services:
       - WATCHPACK_POLLING=true
       - WDS_SOCKET_HOST=127.0.0.1
       - WDS_SOCKET_PORT=3000
-    container_name: ui
+    container_name: web
   # redis:
   #   image: redis:alpine
   #   container_name: redis
+  # tests:
+  #   build:
+  #     context: .
+  #     dockerfile: Dockerfile.dev
+  #   image: hunlecb/frontend-tests
+  #   volumes:
+  #     - ./src:/app/src
+  #     - ./public:/app/public
+  #   command: ['npm', 'run', 'test']
