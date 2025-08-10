@@ -3,7 +3,7 @@ name: Build, Push to ECR, and Deploy to ECS
 on:
   push:
     branches:
-      - main
+      - master
   workflow_dispatch: # Add this to enable manual trigger
 
 jobs:
