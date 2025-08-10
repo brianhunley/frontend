@@ -6,7 +6,9 @@ WORKDIR '/app'
 COPY package*.json .
 RUN npm install
 
-COPY ./src /app/src
+# Copy only the src and public folders
+COPY src/ ./src/
+COPY public/ ./public/
 
 FROM base AS build
 RUN npm run build
