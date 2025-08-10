@@ -1,60 +1,27 @@
-name: Build, Push to ECR, and Deploy to ECS
-
-on:
-  push:
-    branches:
-      - master
-  workflow_dispatch: # Add this to enable manual trigger
-
+name: Push to AWS ECR
+on: [push]
 jobs:
-  build-and-deploy:
+  build:
     runs-on: ubuntu-latest
-    # environment: production # Optional: if using environment secrets
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
+      - uses: actions/checkout@v4
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
+          aws-region: us-east-1
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Debug ECR variables
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+      - name: Create ECR repository if not exists
         run: |
-          echo "ECR_REGISTRY: $ECR_REGISTRY"
-          echo "ECR_REPOSITORY: $ECR_REPOSITORY"
-          echo "Full image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-      - name: Build, tag, and push Docker image to Amazon ECR
+          aws ecr describe-repositories --repository-names frontend --region us-east-1 || aws ecr create-repository --repository-name frontend --region us-east-1
+      - name: Build, tag, and push image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
+          ECR_REPOSITORY: frontend
+          IMAGE_TAG: latest
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
-          sleep 5
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Update ECS task definition
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: ${{ github.sha }}
-          ECS_TASK_DEFINITION: task-definition.json
-          ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
-          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
-        run: |
-          TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
-          echo $TASK_DEF > updated-task-definition.json
-          aws ecs register-task-definition --cli-input-json file://updated-task-definition.json > /dev/null
-          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $(aws ecs list-task-definitions --family-prefix my-app-task --query 'taskDefinitionArns[-1]' --output text) --force-new-deployment
