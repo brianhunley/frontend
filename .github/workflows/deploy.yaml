@@ -1,7 +1,8 @@
 name: Build and Deploy to AWS ECS
 on:
   push:
-    branches: [master]
+    branches:
+      - ${{ github.event.repository.default_branch }}
   workflow_dispatch: # Add this to enable manual trigger
 
 jobs:
@@ -24,29 +25,30 @@ jobs:
 
       - name: Create ECR repository if not exists
         run: |
-          aws ecr describe-repositories --repository-names frontend --region us-east-1 || aws ecr create-repository --repository-name frontend --region us-east-1
+          aws ecr describe-repositories --repository-names ${{ secrets.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name ${{ secrets.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }}
 
       - name: Build, tag, and push image to ECR
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          ECR_REPOSITORY: frontend
-          IMAGE_TAG: latest
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
         run: |
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      - name: Update ECS task definition
-        id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
-        with:
-          task-definition: task-definition.json
-          container-name: frontend-app-container
-          image: ${{ steps.login-ecr.outputs.registry }}/frontend:latest
+      # - name: Update ECS task definition
+      #   id: task-def
+      #   uses: aws-actions/amazon-ecs-render-task-definition@v1
+      #   with:
+      #     task-definition: task-definition.json
+      #     container-name: ${{ secrets.}}
+      #     image: ${{ steps.login-ecr.outputs.registry }}/frontend:latest
 
-      - name: Deploy to ECS
-        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-        with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }}
-          service: frontend-app-task-service-2q3t4uxa
-          cluster: marvelous-wolf-nbjh27
-          wait-for-service-stability: true
+      # - name: Deploy to ECS
+      #   uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+      #   with:
+      #     task-definition: ${{ steps.task-def.outputs.task-definition }}
+      #     service: frontend-app-task-service-2q3t4uxa
+      #     cluster: marvelous-wolf-nbjh27
+      #     wait-for-service-stability: true
