@@ -1,34 +1,41 @@
-name: Build and Deploy to AWS ECS
+name: Push to Amazon Elastic Container Service (ECS)
+
 on:
   push:
     branches:
-      - ${{ github.event.repository.default_branch }}
+      - master
   workflow_dispatch: # Add this to enable manual trigger
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+    # environment: production # Optional: if using environment secrets
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Configure Amazon Web Service (AWS) credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+          aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login to Amazon Elastic Container Registry (ECR)
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Create ECR repository if not exists
-        run: |
-          aws ecr describe-repositories --repository-names ${{ secrets.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }} || aws ecr create-repository --repository-name ${{ secrets.ECR_REPOSITORY }} --region ${{ secrets.AWS_REGION }}
+      # - name: Debug ECR variables
+      #   env:
+      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      #     ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      #     IMAGE_TAG: ${{ github.sha }}
+      #   run: |
+      #     echo "ECR_REGISTRY: $ECR_REGISTRY"
+      #     echo "ECR_REPOSITORY: $ECR_REPOSITORY"
+      #     echo "Full image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: Build, tag, and push image to ECR
-        id: build-image
+      - name: Build, tag, and push Docker image to Amazon Elastic Container Registry (ECR)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -37,18 +44,16 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
-      # - name: Update ECS task definition
-      #   id: task-def
-      #   uses: aws-actions/amazon-ecs-render-task-definition@v1
-      #   with:
-      #     task-definition: task-definition.json
-      #     container-name: ${{ secrets.}}
-      #     image: ${{ steps.login-ecr.outputs.registry }}/frontend:latest
-
-      # - name: Deploy to ECS
-      #   uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      #   with:
-      #     task-definition: ${{ steps.task-def.outputs.task-definition }}
-      #     service: frontend-app-task-service-2q3t4uxa
-      #     cluster: marvelous-wolf-nbjh27
-      #     wait-for-service-stability: true
+      # - name: Update Amazon Elastic Container Service (ECR) task definition
+      #   env:
+      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      #     ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+      #     IMAGE_TAG: ${{ github.sha }}
+      #     ECS_TASK_DEFINITION: task-definition.json
+      #     ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+      #     ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+      #   run: |
+      #     TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
+      #     echo $TASK_DEF > updated-task-definition.json
+      #     aws ecs register-task-definition --cli-input-json file://updated-task-definition.json > /dev/null
+      #     aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $(aws ecs list-task-definitions --family-prefix my-app-task --query 'taskDefinitionArns[-1]' --output text) --force-new-deployment
