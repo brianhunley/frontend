@@ -18,5 +18,5 @@
   "networkMode": "awsvpc",
   "cpu": "256",
   "memory": "512",
-  "executionRoleArn": "arn:aws:iam::aws:policy/aws-service-role/AmazonECSServiceRolePolicy"
+  "executionRoleArn": "arn:aws:iam::533267434977:role/ecsTaskExecutionRole"
 }
