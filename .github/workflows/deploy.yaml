@@ -1,41 +1,42 @@
-name: Push to Amazon Elastic Container Service (ECS)
+name: Build, Push to ECR, and Deploy to ECS
 
 on:
   push:
     branches:
-      - master
-  workflow_dispatch: # Add this to enable manual trigger
+      - main # Or ${{ github.event.repository.default_branch }}
+  workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
-    # environment: production # Optional: if using environment secrets
+    environment: production
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Configure Amazon Web Service (AWS) credentials
+      - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Login to Amazon Elastic Container Registry (ECR)
+      - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      # - name: Debug ECR variables
-      #   env:
-      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      #     ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-      #     IMAGE_TAG: ${{ github.sha }}
-      #   run: |
-      #     echo "ECR_REGISTRY: $ECR_REGISTRY"
-      #     echo "ECR_REPOSITORY: $ECR_REPOSITORY"
-      #     echo "Full image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
+      - name: Debug ECR variables
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          echo "ECR_REGISTRY: $ECR_REGISTRY"
+          echo "ECR_REPOSITORY: $ECR_REPOSITORY"
+          echo "Full image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
 
-      - name: Build, tag, and push Docker image to Amazon Elastic Container Registry (ECR)
+      - name: Build, tag, and push Docker image to Amazon ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -45,45 +46,23 @@ jobs:
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
       - name: Update ECS task definition
+        id: update-task
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           IMAGE_TAG: ${{ github.sha }}
           ECS_TASK_DEFINITION: task-definition.json
-          ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
-          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
         run: |
           TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
           echo $TASK_DEF > updated-task-definition.json
-          aws ecs register-task-definition --cli-input-json file://updated-task-definition.json > /dev/null
-          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $(aws ecs list-task-definitions --family-prefix my-app-task --query 'taskDefinitionArns[-1]' --output text) --force-new-deployment
+          TASK_ARN=$(aws ecs register-task-definition --cli-input-json file://updated-task-definition.json --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "::set-output name=task-arn::$TASK_ARN"
 
-      # - name: Update ECS task definition
-      #   id: task-def
-      #   uses: aws-actions/amazon-ecs-render-task-definition@v1
-      #   with:
-      #     task-definition: task-definition.json
-      #     container-name: ${{ secrets.}}
-      #     image: ${{ steps.login-ecr.outputs.registry }}/frontend:latest
-
-      # - name: Deploy to ECS
-      #   uses: aws-actions/amazon-ecs-deploy-task-definition@v1
-      #   with:
-      #     task-definition: ${{ steps.task-def.outputs.task-definition }}
-      #     service: frontend-app-task-service-2q3t4uxa
-      #     cluster: marvelous-wolf-nbjh27
-      #     wait-for-service-stability: true
-
-      # - name: Update Amazon Elastic Container Service (ECR) task definition
-      #   env:
-      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      #     ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-      #     IMAGE_TAG: ${{ github.sha }}
-      #     ECS_TASK_DEFINITION: task-definition.json
-      #     ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
-      #     ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
-      #   run: |
-      #     TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
-      #     echo $TASK_DEF > updated-task-definition.json
-      #     aws ecs register-task-definition --cli-input-json file://updated-task-definition.json > /dev/null
-      #     aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $(aws ecs list-task-definitions --family-prefix my-app-task --query 'taskDefinitionArns[-1]' --output text) --force-new-deployment
+      - name: Push to ECS service
+        env:
+          ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
+          ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
+          TASK_ARN: ${{ steps.update-task.outputs.task-arn }}
+        run: |
+          aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_ARN --force-new-deployment
+          echo "Deployed to ECS service $ECS_SERVICE in cluster $ECS_CLUSTER with task definition $TASK_ARN"
