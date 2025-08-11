@@ -3,14 +3,13 @@ name: Build, Push to ECR, and Deploy to ECS
 on:
   push:
     branches:
-      - main # Or ${{ github.event.repository.default_branch }}
+      - master
   workflow_dispatch:
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     environment: production
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -53,10 +52,13 @@ jobs:
           IMAGE_TAG: ${{ github.sha }}
           ECS_TASK_DEFINITION: task-definition.json
         run: |
-          TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE')
+          TASK_DEF=$(cat $ECS_TASK_DEFINITION | jq --arg IMAGE "$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
           echo $TASK_DEF > updated-task-definition.json
           TASK_ARN=$(aws ecs register-task-definition --cli-input-json file://updated-task-definition.json --query 'taskDefinition.taskDefinitionArn' --output text)
-          echo "::set-output name=task-arn::$TASK_ARN"
+          echo "task-arn=$TASK_ARN" >> $GITHUB_OUTPUT
+
+      - name: Debug task definition
+        run: cat updated-task-definition.json
 
       - name: Push to ECS service
         env:
