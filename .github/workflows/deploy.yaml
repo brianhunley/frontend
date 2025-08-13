@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: us-east-1 # Set your AWS region
+  AWS_REGION: us-east-2 # Set your AWS region
   ECS_SERVICE: frontend-app-task-service-2q3t4uxa # Set your ECS service name
   ECS_CLUSTER: marvelous-wolf-nbjh27 # Set your ECS cluster name
   ECS_TASK_DEFINITION: .aws/task-definition.json # Path to your ECS task definition file
