@@ -1,4 +1,4 @@
-name: Single-Container Build and Deploy to ECR and ECS
+name: Deploy to Amazon ECS
 
 on:
   push:
