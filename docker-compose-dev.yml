@@ -1,0 +1,19 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    image: hunlecb/frontend
+    ports:
+      - '3000:3000'
+    volumes:
+      # mount local directories for code changes
+      - ./src:/app/src
+      - ./public:/app/public
+    environment:
+      - NODE_ENV=development # Example: Set development environment
+      - DEBUG=true # Example: Enable debug mode
+      - DATABASE_URL=postgres://user:password@host:5432/dbname # Example: Local DB connection
+      - WATCHPACK_POLLING=true
+      - WDS_SOCKET_HOST=127.0.0.1
+      - WDS_SOCKET_PORT=3000

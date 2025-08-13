@@ -1,28 +1,24 @@
 services:
-  ui:
+  app:
     build:
       context: .
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile
     image: hunlecb/frontend
     ports:
-      - '3000:3000'
-    volumes:
-      - ./src:/app/src
-      - ./public:/app/public
+      - '80:80'
     environment:
-      - WATCHPACK_POLLING=true
-      - WDS_SOCKET_HOST=127.0.0.1
-      - WDS_SOCKET_PORT=3000
-    container_name: web
-  # redis:
-  #   image: redis:alpine
-  #   container_name: redis
-  # tests:
-  #   build:
-  #     context: .
-  #     dockerfile: Dockerfile.dev
-  #   image: hunlecb/frontend-tests
-  #   volumes:
-  #     - ./src:/app/src
-  #     - ./public:/app/public
-  #   command: ['npm', 'run', 'test']
+      - NODE_ENV=production # Set production environment
+      - LOG_LEVEL=info # Set production log level
+      - DATABASE_URL=postgres://prod_user:prod_password@prod_host:5432/proddb # Example: Production DB connection
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512MB
+    networks:
+      - app-network
+    restart: always
+
+networks:
+  app-network:
+    driver: bridge

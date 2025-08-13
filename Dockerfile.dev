@@ -8,6 +8,10 @@ RUN npm install
 # Intentionally skip copying src and public (rely on bind mounts to local source code)
 # COPY . .
 
-# EXPOSE 3000
+# Copy only the src and public folders
+COPY src/ ./src/
+COPY public/ ./public/
+
+EXPOSE 3000
 
 CMD ["npm", "start"]

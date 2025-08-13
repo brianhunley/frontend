@@ -13,6 +13,8 @@ COPY public/ ./public/
 FROM base AS build
 RUN npm run build
 
+EXPOSE 80
+
 # Production stage (serve with nginx)
 FROM nginx:alpine AS prod
 COPY --from=build /app/build /usr/share/nginx/html
