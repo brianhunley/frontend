@@ -1,5 +1,7 @@
+# -----------------------------------------
 # Build stage
-FROM node:lts-alpine AS base
+# -----------------------------------------
+FROM node:lts-alpine AS build
 
 WORKDIR '/app'
 
@@ -10,11 +12,12 @@ RUN npm install
 COPY src/ ./src/
 COPY public/ ./public/
 
-FROM base AS build
 RUN npm run build
 
-EXPOSE 80
-
+# -----------------------------------------
 # Production stage (serve with nginx)
-FROM nginx:alpine AS prod
+# -----------------------------------------
+FROM nginx:alpine
 COPY --from=build /app/build /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
