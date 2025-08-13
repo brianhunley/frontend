@@ -16,14 +16,61 @@ env:
   IMAGE_TAG: ${{ github.sha }} # Tag image with commit SHA
 
 jobs:
-  build-and-deploy:
+  # test:
+  #   name: Run Tests
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
+
+  #     - name: Debug Environment Variables
+  #       run: |
+  #         echo "=== Debug: Test Job Environment Variables ==="
+  #         env | sort
+  #         echo "=== Debug: GitHub Context ==="
+  #         echo "GITHUB_SHA: ${{ github.sha }}"
+  #         echo "GITHUB_REF: ${{ github.ref }}"
+  #         echo "GITHUB_REPOSITORY: ${{ github.repository }}"
+  #         echo "RUNTIME: ${{ env.RUNTIME }}"
+  #         echo "RUNTIME_VERSION: ${{ env.RUNTIME_VERSION }}"
+  #         echo "TEST_COMMAND: ${{ env.TEST_COMMAND }}"
+  #         echo "TEST_PATH: ${{ env.TEST_PATH }}"
+
+  #     - name: Set up Runtime
+  #       uses: actions/setup-${{ env.RUNTIME }}@v4
+  #       with:
+  #         ${{ env.RUNTIME }}-version: ${{ env.RUNTIME_VERSION }}
+
+  #     - name: Install Dependencies
+  #       working-directory: ${{ env.TEST_PATH }}
+  #       run: npm install
+
+  #     - name: Run Tests
+  #       working-directory: ${{ env.TEST_PATH }}
+  #       run: ${{ env.TEST_COMMAND }}
+
+  build-and-push:
+    name: Build and Push Docker Image to ECR
     runs-on: ubuntu-latest
-    environment: production
+    needs: test
     steps:
-      - name: Checkout code
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS credentials
+      - name: Debug Environment Variables
+        run: |
+          echo "=== Debug: Build Job Environment Variables ==="
+          env | sort
+          echo "=== Debug: GitHub Context ==="
+          echo "GITHUB_SHA: ${{ github.sha }}"
+          echo "GITHUB_REF: ${{ github.ref }}"
+          echo "GITHUB_REPOSITORY: ${{ github.repository }}"
+          echo "AWS_REGION: ${{ env.AWS_REGION }}"
+          echo "ECR_REPOSITORY: ${{ env.ECR_REPOSITORY }}"
+          echo "IMAGE_TAG: ${{ env.IMAGE_TAG }}"
+          echo "AWS_ACCESS_KEY_ID (masked): ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'set' || 'not set' }}"
+
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -34,52 +81,74 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Debug ECR variables
+      - name: Build and Push Image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
         run: |
+          echo "=== Debug: Build Configuration ==="
           echo "ECR_REGISTRY: $ECR_REGISTRY"
-          echo "ECR_REPOSITORY: $ECR_REPOSITORY"
-          echo "Full image: $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG"
-
-      - name: Build, tag, and push Docker image to Amazon ECR
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-        run: |
-          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} .
+          echo "Building image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+                       -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
+                       -f ${{ env.DOCKERFILE_PATH }}/Dockerfile ${{ env.DOCKERFILE_PATH }}
           docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+          echo "image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
+        id: build-image
+        working-directory: ${{ env.DOCKERFILE_PATH }}
+
+  deploy:
+    name: Deploy to Amazon ECS
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    environment: production
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Debug Environment Variables
+        run: |
+          echo "=== Debug: Deploy Job Environment Variables ==="
+          env | sort
+          echo "=== Debug: GitHub Context and Outputs ==="
+          echo "GITHUB_SHA: ${{ github.sha }}"
+          echo "GITHUB_REF: ${{ github.ref }}"
+          echo "GITHUB_REPOSITORY: ${{ github.repository }}"
+          echo "AWS_REGION: ${{ env.AWS_REGION }}"
+          echo "ECS_SERVICE: ${{ env.ECS_SERVICE }}"
+          echo "ECS_CLUSTER: ${{ env.ECS_CLUSTER }}"
+          echo "ECS_TASK_DEFINITION: ${{ env.ECS_TASK_DEFINITION }}"
+          echo "CONTAINER_NAME: ${{ env.CONTAINER_NAME }}"
+          echo "IMAGE: ${{ needs.build-and-push.outputs.image }}"
+          echo "AWS_ACCESS_KEY_ID (masked): ${{ secrets.AWS_ACCESS_KEY_ID != '' && 'set' || 'not set' }}"
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
       - name: Update Task Definition
         id: task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }} # Reference workflow env
-          container-name: ${{ env.CONTAINER_NAME }} # Reference workflow env
-          image: ${{ needs.build-and-push.outputs.image }} # Reference job output
+          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ needs.build-and-push.outputs.image }}
 
       - name: Deploy Amazon ECS Task Definition
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
-          task-definition: ${{ steps.task-def.outputs.task-definition }} # Reference step output
-          service: ${{ env.ECS_SERVICE }} # Reference workflow env
-          cluster: ${{ env.ECS_CLUSTER }} # Reference workflow env
+          task-definition: ${{ steps.task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
-      # - name: Update ECS task definition
-      #   id: update-task
-      #   env:
-      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-      #   run: |
-      #     TASK_DEF=$(cat ${{ env.ECS_TASK_DEFINITION }} | jq --arg IMAGE "${{ env.ECR_REGISTRY}}/${{ env.ECR_REPOSITORY}}:${{ env.IMAGE_TAG }}" '.containerDefinitions[0].image = $IMAGE | del(.taskDefinitionArn, .revision, .status, .requiresAttributes, .compatibilities, .registeredAt, .registeredBy)')
-      #     echo $TASK_DEF > updated-task-definition.json
-      #     TASK_ARN=$(aws ecs register-task-definition --cli-input-json file://updated-task-definition.json --query 'taskDefinition.taskDefinitionArn' --output text)
-      #     echo "task-arn=$TASK_ARN" >> $GITHUB_OUTPUT
-
-      # - name: Push to ECS service
-      #   env:
-      #     ECS_SERVICE: ${{ secrets.ECS_SERVICE }}
-      #     ECS_CLUSTER: ${{ secrets.ECS_CLUSTER }}
-      #     TASK_ARN: ${{ steps.update-task.outputs.task-arn }}
-      #   run: |
-      #     aws ecs update-service --cluster $ECS_CLUSTER --service $ECS_SERVICE --task-definition $TASK_ARN --force-new-deployment
-      #     echo "Deployed to ECS service $ECS_SERVICE in cluster $ECS_CLUSTER with task definition $TASK_ARN"
+      - name: Debug ECS Service Status
+        run: |
+          echo "=== Debug: ECS Service Status ==="
+          aws ecs describe-services \
+            --cluster ${{ env.ECS_CLUSTER }} \
+            --services ${{ env.ECS_SERVICE }} \
+            --region ${{ env.AWS_REGION }}
