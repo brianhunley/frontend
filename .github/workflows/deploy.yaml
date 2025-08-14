@@ -9,7 +9,7 @@ env:
   AWS_REGION: us-east-2 # Set your AWS region
   ECS_SERVICE: frontend-app-task-service-2q3t4uxa # Set your ECS service name
   ECS_CLUSTER: marvelous-wolf-nbjh27 # Set your ECS cluster name
-  ECS_TASK_DEFINITION: .aws/task-definition.json # Path to your ECS task definition file
+  ECS_TASK_DEFINITION: frontend-app-task # Name of the task definition
   CONTAINER_NAME: frontend-app-container # Name of the frontend container in task definition
   ECR_REPOSITORY: hunlecb/frontend # Your ECR repository name
   IMAGE_TAG: ${{ github.sha }} # Tag image with commit SHA
@@ -32,7 +32,7 @@ jobs:
           echo "GITHUB_SHA: ${{ github.sha }}"
           echo "GITHUB_REF: ${{ github.ref }}"
           echo "GITHUB_REPOSITORY: ${{ github.repository }}"
-          echo "AWS_REGION: ${{ env.AWS_REGION }}"
+          echo "AWS_REGION: $AWS_REGION"
           echo "ECS_SERVICE: ${{ env.ECS_SERVICE }}"
           echo "ECS_CLUSTER: ${{ env.ECS_CLUSTER }}"
           echo "ECS_TASK_DEFINITION: ${{ env.ECS_TASK_DEFINITION }}"
@@ -53,27 +53,53 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push Image to ECR
+      # - name: Build and Push Image to ECR
+      #   env:
+      #     ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+      #   run: |
+      #     echo "=== Debug: Build Configuration ==="
+      #     echo "ECR_REGISTRY: $ECR_REGISTRY"
+      #     echo "Building image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
+      #     docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
+      #                  -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
+      #                  -f ${{ env.DOCKERFILE_PATH }}/Dockerfile ${{ env.DOCKERFILE_PATH }}
+      #     docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+      #     docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
+      #     echo "image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
+      #   id: build-image
+      #   working-directory: ${{ env.DOCKERFILE_PATH }}
+
+      - name: Build, Tag, and Push Image to Amazon ECR
+        id: build-image
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          # IMAGE_TAG: ${{ github.sha }}
         run: |
-          echo "=== Debug: Build Configuration ==="
-          echo "ECR_REGISTRY: $ECR_REGISTRY"
-          echo "Building image: ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}"
-          docker build -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }} \
-                       -t ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest \
-                       -f ${{ env.DOCKERFILE_PATH }}/Dockerfile ${{ env.DOCKERFILE_PATH }}
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
-          docker push ${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:latest
-          echo "image=${{ env.ECR_REGISTRY }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}" >> $GITHUB_OUTPUT
-        id: build-image
-        working-directory: ${{ env.DOCKERFILE_PATH }}
+          # Build a docker container and
+          # push it to ECR so that it can
+          # be deployed to ECS.
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          echo "image=$ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG" >> $GITHUB_OUTPUT
 
-      - name: Update Task Definition
+      - name: Download task definition
+        run: |
+          aws ecs describe-task-definition --task-definition ${{ env.ECS_TASK_DEFINITION }} \
+          --query taskDefinition > task-definition.json
+
+      # - name: Update Task Definition
+      #   id: task-def
+      #   uses: aws-actions/amazon-ecs-render-task-definition@v1
+      #   with:
+      #     task-definition: ${{ env.ECS_TASK_DEFINITION }}
+      #     container-name: ${{ env.CONTAINER_NAME }}
+      #     image: ${{ steps.build-image.outputs.image }}
+
+      - name: Fill in the new image ID in the Amazon ECS task definition
         id: task-def
-        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        uses: aws-actions/amazon-ecs-render-task-definition@1
         with:
-          task-definition: ${{ env.ECS_TASK_DEFINITION }}
+          task-definition: task-definition.json
           container-name: ${{ env.CONTAINER_NAME }}
           image: ${{ steps.build-image.outputs.image }}
 
